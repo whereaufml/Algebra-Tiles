@@ -1,19 +1,24 @@
 import React, { useRef, useState } from 'react';
-import { ArrowRight, Layers, Plus, RotateCcw, Wand2 } from 'lucide-react';
+import { ArrowRight, Layers, Plus, RotateCcw, Scissors, Undo2, Wand2 } from 'lucide-react';
 import { Tile, TileSign, TileType } from '../types/algebra';
 import {
   canFormZeroPair,
+  clearCancelledZeroPairs,
   computeTileClusters,
+  countTileStatuses,
   createTile,
   createTilesFromSpec,
   eliminateSpecificZeroPair,
   eliminateZeroPairs,
+  findNextAvailableTilePosition,
   findZeroPairs,
   formatExpression,
   formatSummaryToExpression,
   getTermLabel,
   groupTilesByTerm,
+  isTileActive,
 } from '../engine/MathEngine';
+import { pushBoundedHistory } from '../storage/WorkspaceStorage';
 import { WorkspaceTileItem, getTileDimensions, getTileLabel } from './Tile';
 import { findOverlappingTile } from './Workspace';
 
@@ -36,21 +41,34 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
   const getDefaultCols = () =>
     typeof window !== 'undefined' && window.innerWidth < 640 ? 3 : 5;
 
-  const [tiles, setTiles] = useState<Tile[]>(() =>
-    createTilesFromSpec(initialTiles, 18, 26, getDefaultCols())
-  );
+  const [history, setHistory] = useState<Tile[][]>(() => [
+    createTilesFromSpec(initialTiles, 18, 26, getDefaultCols()),
+  ]);
+  const [historyIdx, setHistoryIdx] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [statusNote, setStatusNote] = useState<string | null>(null);
+  const preDragRef = useRef<Tile[] | null>(null);
+
+  const tiles = history[historyIdx] || [];
+
+  const commitTiles = (nextTiles: Tile[]) => {
+    const next = pushBoundedHistory(history, historyIdx, nextTiles);
+    setHistory(next.stack);
+    setHistoryIdx(next.index);
+  };
 
   // Sync if user switches lesson
   const specSignature = JSON.stringify(initialTiles);
   React.useEffect(() => {
-    setTiles(createTilesFromSpec(initialTiles, 18, 26, getDefaultCols()));
+    setHistory([createTilesFromSpec(initialTiles, 18, 26, getDefaultCols())]);
+    setHistoryIdx(0);
     setSelectedIds([]);
     setStatusNote(null);
+    preDragRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specSignature]);
 
+  const { activeCount, cancelledCount } = countTileStatuses(tiles);
   const clusters = computeTileClusters(tiles);
   const zeroPairs = findZeroPairs(tiles);
   const zeroPairIds = new Set(zeroPairs.flatMap(([a, b]) => [a.id, b.id]));
@@ -58,92 +76,131 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
 
   const handleAddTile = (type: TileType, sign: TileSign) => {
     const boardW = boardRef.current?.clientWidth || 300;
-    const cols = Math.max(3, Math.floor((boardW - 24) / 84));
-    const idx = tiles.length;
-    const x = 16 + (idx % cols) * 82;
-    const y = 26 + Math.floor(idx / cols) * 90;
-    const added = createTile(type, sign, { x, y });
-    setTiles((prev) => [...prev, added]);
-    setStatusNote(`Ubin ${getTileLabel(type, sign)} ditambahkan. Coba geser atau kelompokkan!`);
+    const pos = findNextAvailableTilePosition(tiles, type, boardW);
+    const added = createTile(type, sign, pos);
+    commitTiles([...tiles, added]);
+    setStatusNote(`Added ${getTileLabel(type, sign)} tile. Try dragging or grouping it!`);
   };
 
   const handleGroup = () => {
     const width = boardRef.current?.clientWidth || 300;
     const grouped = groupTilesByTerm(tiles, Math.max(240, width - 16));
-    setTiles(grouped);
-    setStatusNote(`Ubin dikelompokkan berdasarkan jenis sukunya: ${formatExpression(grouped, true)}.`);
+    commitTiles(grouped);
+    setStatusNote(`Tiles grouped by like terms: ${formatExpression(grouped, true)}.`);
   };
 
   const handleZeroPair = () => {
-    const res = eliminateZeroPairs(tiles);
+    const boardW = boardRef.current?.clientWidth || 300;
+    const res = eliminateZeroPairs(tiles, {
+      boardWidth: boardW,
+      boardHeight: requiredBoardHeight,
+    });
     if (res.removedCount === 0) {
       setStatusNote(res.explanation);
       return;
     }
-    setTiles(res.remainingTiles);
+    commitTiles(res.remainingTiles);
     setStatusNote(res.explanation);
   };
 
+  const handleClearCancelled = () => {
+    const res = clearCancelledZeroPairs(tiles);
+    if (res.clearedCount === 0) return;
+    commitTiles(res.remainingTiles);
+    setStatusNote(res.explanation);
+  };
+
+  const handleUndo = () => {
+    if (historyIdx > 0) {
+      setHistoryIdx(historyIdx - 1);
+      setSelectedIds([]);
+      setStatusNote('Restored the previous demonstration step (Undo).');
+    }
+  };
+
   const handleReset = () => {
-    setTiles(createTilesFromSpec(initialTiles, 18, 26, getDefaultCols()));
+    const initial = createTilesFromSpec(initialTiles, 18, 26, getDefaultCols());
+    setHistory([initial]);
+    setHistoryIdx(0);
     setSelectedIds([]);
-    setStatusNote('Susunan awal demonstrasi dikembalikan.');
+    preDragRef.current = null;
+    setStatusNote('Reset the demonstration board to its initial arrangement.');
   };
 
   const handleDragMove = (id: string, x: number, y: number) => {
-    setTiles((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, position: { x, y } } : t))
-    );
+    if (!preDragRef.current) {
+      preDragRef.current = tiles;
+    }
+    setHistory((prev) => {
+      const copy = [...prev];
+      const current = copy[historyIdx] || [];
+      copy[historyIdx] = current.map((t) => (t.id === id ? { ...t, position: { x, y } } : t));
+      return copy;
+    });
   };
 
   const handleDragEnd = (id: string, x: number, y: number, wasMoved: boolean) => {
+    const before = preDragRef.current || tiles;
+    preDragRef.current = null;
     if (!wasMoved) return;
-    setTiles((prev) => {
-      const moving = prev.find((t) => t.id === id);
-      if (!moving) return prev;
-      const hit = findOverlappingTile(prev, id, x, y, moving.type);
-      if (hit) {
-        if (canFormZeroPair(moving, hit)) {
-          const res = eliminateSpecificZeroPair(prev, moving.id, hit.id);
-          setStatusNote(res.explanation);
-          return res.remainingTiles;
+
+    const moving = before.find((t) => t.id === id);
+    if (!moving || !isTileActive(moving)) return;
+    const movedTiles = before.map((t) =>
+      t.id === id ? { ...t, position: { x, y }, groupId: null } : t
+    );
+
+    const hit = findOverlappingTile(movedTiles.filter(isTileActive), id, x, y, moving.type);
+    let finalTiles = movedTiles;
+
+    if (hit) {
+      if (canFormZeroPair(moving, hit)) {
+        const res = eliminateSpecificZeroPair(movedTiles, moving.id, hit.id);
+        setStatusNote(res.explanation);
+        finalTiles = res.remainingTiles;
+      } else if (hit.type === moving.type && hit.sign === moving.sign) {
+        const groupId = hit.groupId || `demo-grp-${hit.type}-${hit.sign}-${Date.now()}`;
+        const members = movedTiles.filter(
+          (t) => t.id !== moving.id && (t.groupId === groupId || t.id === hit.id)
+        );
+        const { width, height } = getTileDimensions(hit.type);
+        const boardW = boardRef.current?.clientWidth || 460;
+        const maxRight = Math.max(...members.map((m) => m.position.x));
+        let snapX = maxRight + width + 8;
+        let snapY = hit.position.y;
+        if (snapX + width > boardW - 12) {
+          snapX = hit.position.x;
+          snapY = hit.position.y + height + 8;
         }
-        if (hit.type === moving.type && hit.sign === moving.sign) {
-          const groupId = hit.groupId || `demo-grp-${hit.type}-${hit.sign}-${Date.now()}`;
-          const members = prev.filter((t) => t.id !== moving.id && (t.groupId === groupId || t.id === hit.id));
-          const { width, height } = getTileDimensions(hit.type);
-          const boardW = boardRef.current?.clientWidth || 460;
-          const maxRight = Math.max(...members.map((m) => m.position.x));
-          let snapX = maxRight + width + 8;
-          let snapY = hit.position.y;
-          if (snapX + width > boardW - 12) {
-            snapX = hit.position.x;
-            snapY = hit.position.y + height + 8;
-          }
-          const count = members.length + 1;
-          const groupExpr = formatSummaryToExpression({
-            x2: hit.type === 'x2' ? hit.sign * count : 0,
-            x: hit.type === 'x' ? hit.sign * count : 0,
-            constant: hit.type === '1' ? hit.sign * count : 0,
-          });
-          setStatusNote(`${count} ubin sejenis dikelompokkan menjadi ${groupExpr}.`);
-          return prev.map((t) => {
-            if (t.id === hit.id) return { ...t, groupId };
-            if (t.id === moving.id) return { ...t, groupId, position: { x: snapX, y: snapY } };
-            return t;
-          });
-        }
+        const count = members.length + 1;
+        const groupExpr = formatSummaryToExpression({
+          x2: hit.type === 'x2' ? hit.sign * count : 0,
+          x: hit.type === 'x' ? hit.sign * count : 0,
+          constant: hit.type === '1' ? hit.sign * count : 0,
+        });
+        setStatusNote(`Grouped ${count} like tiles into ${groupExpr}.`);
+        finalTiles = movedTiles.map((t) => {
+          if (t.id === hit.id) return { ...t, groupId };
+          if (t.id === moving.id) return { ...t, groupId, position: { x: snapX, y: snapY } };
+          return t;
+        });
+      } else {
         setStatusNote(
-          `Suku berbeda (${getTermLabel(moving.type)} dan ${getTermLabel(hit.type)}) tidak dapat digabungkan.`
+          `Unlike terms (${getTermLabel(moving.type)} and ${getTermLabel(hit.type)}) cannot be combined.`
         );
       }
-      return prev.map((t) => (t.id === id ? { ...t, position: { x, y }, groupId: null } : t));
-    });
+    }
+
+    const next = pushBoundedHistory(history, historyIdx, before);
+    const committed = pushBoundedHistory(next.stack, next.index, finalTiles);
+    setHistory(committed.stack);
+    setHistoryIdx(committed.index);
   };
 
   const quickButtons: Array<{ type: TileType; sign: TileSign }> = allowNegative
     ? [
         { type: 'x2', sign: 1 },
+        { type: 'x2', sign: -1 },
         { type: 'x', sign: 1 },
         { type: 'x', sign: -1 },
         { type: '1', sign: 1 },
@@ -155,13 +212,18 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
         { type: '1', sign: 1 },
       ];
 
+  const requiredBoardHeight = tiles.reduce((maxY, t) => {
+    const { height } = getTileDimensions(t.type);
+    return Math.max(maxY, t.position.y + height + 32);
+  }, 228);
+
   return (
     <div className="rounded-2xl border border-[#E5E0F3] bg-[#F7F5FC] p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <span className="text-xs font-bold text-[#39286F]">{caption}</span>
           <p className="text-[11px] text-slate-600">
-            Coba geser ubin langsung di papan mini ini, tambah ubin baru, atau kelompokkan.
+            Drag tiles directly on this mini board, add new tiles, or group like terms.
           </p>
         </div>
         <span
@@ -192,11 +254,11 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
           <button
             type="button"
             onClick={handleGroup}
-            disabled={tiles.length === 0}
+            disabled={activeCount === 0}
             className="inline-flex items-center gap-1 rounded-xl bg-[#EEF4FC] px-2.5 py-1.5 text-xs font-semibold text-[#1E5494] hover:bg-[#DDEAF9] disabled:opacity-45"
           >
             <Layers className="h-3.5 w-3.5" />
-            Kelompokkan Sejenis
+            Group Like Terms
           </button>
 
           {zeroPairs.length > 0 && (
@@ -206,9 +268,30 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
               className="inline-flex items-center gap-1 rounded-xl bg-[#EF8748] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#D96A27]"
             >
               <Wand2 className="h-3.5 w-3.5" />
-              Pasangkan Zero Pair ({zeroPairs.length})
+              Match Zero Pairs ({zeroPairs.length})
             </button>
           )}
+
+          {cancelledCount > 0 && (
+            <button
+              type="button"
+              onClick={handleClearCancelled}
+              className="inline-flex items-center gap-1 rounded-xl border border-[#D6CEF0] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#5943A8] hover:bg-[#F7F5FC]"
+            >
+              <Scissors className="h-3.5 w-3.5" />
+              Clear Cancelled ({cancelledCount})
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={historyIdx === 0}
+            className="inline-flex items-center gap-1 rounded-xl border border-[#E5E0F3] bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-45"
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            Undo
+          </button>
 
           <button
             type="button"
@@ -227,10 +310,11 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
         data-testid="academy-mini-board"
         onClick={() => setSelectedIds([])}
         style={{
+          minHeight: `${requiredBoardHeight}px`,
           backgroundImage: 'radial-gradient(#D8D1EE 1px, transparent 1px)',
           backgroundSize: '16px 16px',
         }}
-        className="relative min-h-[228px] w-full overflow-hidden rounded-xl border border-[#D6CEF0] bg-white"
+        className="relative w-full overflow-hidden rounded-xl border border-[#D6CEF0] bg-white"
       >
         {clusters.map((cluster) => (
           <div
@@ -244,7 +328,7 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
 
         {tiles.length === 0 ? (
           <div className="flex h-[210px] items-center justify-center text-xs text-slate-400">
-            Papan kosong (0). Tambah ubin atau tekan Reset.
+            Board is empty (0). Add tiles or click Reset.
           </div>
         ) : (
           tiles.map((tile) => (
@@ -281,7 +365,7 @@ export const MiniTileDemo: React.FC<MiniTileDemoProps> = ({
             onClick={onTryInWorkshop}
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#27A89A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1E8E82]"
           >
-            Coba di Algebra Workshop
+            Try in Algebra Workshop
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>

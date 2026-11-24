@@ -1,6 +1,6 @@
 {
   "name": "Algebra Quest",
-  "description": "Game edukasi matematika interaktif berbasis Algebra Tiles untuk memahami suku aljabar, suku sejenis, zero pairs, dan keseimbangan persamaan.",
+  "description": "An interactive algebra learning game powered by Algebra Tiles to explore algebraic terms, like terms, zero pairs, and equation balance.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

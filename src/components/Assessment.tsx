@@ -1,40 +1,82 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
   ClipboardCheck,
+  HeartHandshake,
   Plus,
   RotateCcw,
   Trash2,
   XCircle,
 } from 'lucide-react';
 import { ASSESSMENT_ITEMS, QUIZ_SUITES, TOPICS_CONFIG } from '../data/curriculumConfig';
-import { AssessmentHistoryEntry, AssessmentItem, Tile, TileSign, TileType } from '../types/algebra';
+import {
+  AssessmentHistoryEntry,
+  AssessmentItem,
+  ReflectionEntry,
+  Tile,
+  TileSign,
+  TileType,
+} from '../types/algebra';
 import {
   areExpressionsEquivalent,
   createTile,
   createTilesFromSpec,
   formatExpression,
 } from '../engine/MathEngine';
+import { areSymbolicInputsEquivalent } from '../engine/OperationEngine';
 import { TileVisual } from './Tile';
 
 interface AssessmentProps {
   history: AssessmentHistoryEntry[];
+  savedReflection?: ReflectionEntry;
+  initialQuizId?: string | null;
   onFinishQuiz: (entry: Omit<AssessmentHistoryEntry, 'id' | 'completedAt'>) => void;
+  onSaveReflection: (reflection: Omit<ReflectionEntry, 'updatedAt'>) => void;
   onReviewTopic: (topicId: string) => void;
 }
 
 export const Assessment: React.FC<AssessmentProps> = ({
   history,
+  savedReflection,
+  initialQuizId = null,
   onFinishQuiz,
+  onSaveReflection,
   onReviewTopic,
 }) => {
-  const [selectedSuiteId, setSelectedSuiteId] = useState<string>(QUIZ_SUITES[0].id);
-  const [started, setStarted] = useState(false);
+  const [selectedSuiteId, setSelectedSuiteId] = useState<string>(
+    initialQuizId || QUIZ_SUITES[0].id
+  );
+  const [started, setStarted] = useState(Boolean(initialQuizId));
   const [currentIdx, setCurrentIdx] = useState(0);
   const [choiceAnswers, setChoiceAnswers] = useState<Record<string, number>>({});
   const [tileAnswers, setTileAnswers] = useState<Record<string, Tile[]>>({});
+  const [symbolicAnswers, setSymbolicAnswers] = useState<Record<string, string>>({});
   const [finished, setFinished] = useState(false);
+
+  // Student Reflection state (PDF 1 CTL Reflection requirement)
+  const [understandingSummary, setUnderstandingSummary] = useState(
+    savedReflection?.understandingSummary || ''
+  );
+  const [favoriteActivity, setFavoriteActivity] = useState(
+    savedReflection?.favoriteActivity || ''
+  );
+  const [remainingQuestion, setRemainingQuestion] = useState(
+    savedReflection?.remainingQuestion || ''
+  );
+  const [reflectionSavedNotice, setReflectionSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (initialQuizId) {
+      setSelectedSuiteId(initialQuizId);
+      setStarted(true);
+      setCurrentIdx(0);
+      setChoiceAnswers({});
+      setTileAnswers({});
+      setSymbolicAnswers({});
+      setFinished(false);
+    }
+  }, [initialQuizId]);
 
   const activeSuite = QUIZ_SUITES.find((s) => s.id === selectedSuiteId) || QUIZ_SUITES[0];
   const questions: AssessmentItem[] = ASSESSMENT_ITEMS.filter((item) =>
@@ -48,10 +90,24 @@ export const Assessment: React.FC<AssessmentProps> = ({
     setCurrentIdx(0);
     setChoiceAnswers({});
     setTileAnswers({});
+    setSymbolicAnswers({});
     setFinished(false);
   };
 
   const evaluateQuestion = (q: AssessmentItem): boolean => {
+    if (q.type === 'symbolic_input' && q.expectedTarget) {
+      const raw = (symbolicAnswers[q.id] || '').trim();
+      const check = areSymbolicInputsEquivalent(raw, q.expectedTarget);
+      if (!check.valid) return false;
+      // Exit Ticket 2 specifically asks to rewrite `4 + x` into an equivalent commutative form (`x + 4`)
+      if (q.id === 'exit-ticket-2') {
+        const compact = raw.replace(/\s+/g, '').toLowerCase();
+        if (compact === '4+x') {
+          return false;
+        }
+      }
+      return true;
+    }
     if (q.type === 'build_tiles' && q.expectedTarget) {
       const userTiles = tileAnswers[q.id] || [];
       return areExpressionsEquivalent(
@@ -101,16 +157,100 @@ export const Assessment: React.FC<AssessmentProps> = ({
     });
   };
 
+  const handleSaveReflectionForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!understandingSummary.trim()) return;
+    onSaveReflection({
+      understandingSummary: understandingSummary.trim(),
+      favoriteActivity: favoriteActivity.trim() || 'Algebra Tiles Exploration',
+      remainingQuestion: remainingQuestion.trim() || 'No major questions',
+    });
+    setReflectionSavedNotice(true);
+  };
+
+  const reflectionCard = (
+    <section className="rounded-2xl border border-[#E5E0F3] bg-white p-6">
+      <div className="flex items-center gap-2">
+        <HeartHandshake className="h-5 w-5 text-[#27A89A]" />
+        <h2 className="text-base font-extrabold text-[#39286F]">
+          Student Learning Reflection
+        </h2>
+      </div>
+      <p className="mt-1 text-xs text-slate-600">
+        Assessment focuses on conceptual accuracy and your reflection (never timed or scored by speed).
+      </p>
+
+      <form onSubmit={handleSaveReflectionForm} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <label className="flex flex-col gap-1 text-xs font-semibold text-[#39286F]">
+          <span>1. Which concept did you understand best today?</span>
+          <textarea
+            rows={2}
+            value={understandingSummary}
+            onChange={(e) => {
+              setUnderstandingSummary(e.target.value);
+              setReflectionSavedNotice(false);
+            }}
+            placeholder="For example: 2(x + 3) = 2x + 6 because there are 2 equal groups..."
+            className="rounded-xl border border-[#D6CEF0] bg-[#FCFBFF] px-3 py-2 text-xs font-normal text-[#1E163B]"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-xs font-semibold text-[#39286F]">
+          <span>2. Which activity or tile helped you the most?</span>
+          <input
+            type="text"
+            value={favoriteActivity}
+            onChange={(e) => {
+              setFavoriteActivity(e.target.value);
+              setReflectionSavedNotice(false);
+            }}
+            placeholder="For example: Mission 3 Equal Groups / Snap & Stack"
+            className="rounded-xl border border-[#D6CEF0] bg-[#FCFBFF] px-3 py-2 text-xs font-normal text-[#1E163B]"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-xs font-semibold text-[#39286F]">
+          <span>3. What part would you like to ask more about?</span>
+          <input
+            type="text"
+            value={remainingQuestion}
+            onChange={(e) => {
+              setRemainingQuestion(e.target.value);
+              setReflectionSavedNotice(false);
+            }}
+            placeholder="Optional: write a question to revisit later"
+            className="rounded-xl border border-[#D6CEF0] bg-[#FCFBFF] px-3 py-2 text-xs font-normal text-[#1E163B]"
+          />
+        </label>
+
+        <div className="flex flex-wrap items-center gap-3 md:col-span-3">
+          <button
+            type="submit"
+            disabled={!understandingSummary.trim()}
+            className="rounded-xl bg-[#27A89A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1E8E82] disabled:opacity-45"
+          >
+            Save Learning Reflection
+          </button>
+          {reflectionSavedNotice && (
+            <span className="text-xs font-semibold text-[#1E8E82]">
+              Reflection saved to your learning summary!
+            </span>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+
   if (!started) {
     return (
       <div className="flex flex-col gap-5">
         <div className="rounded-2xl border border-[#E5E0F3] bg-white px-6 py-4">
-          <p className="text-xs font-semibold text-[#5943A8]">QUIZ & ASSESSMENT</p>
+          <p className="text-xs font-semibold text-[#5943A8]">QUIZ &amp; ASSESSMENT</p>
           <h1 className="text-xl font-extrabold text-[#39286F]">
-            Kuis Formatif & Evaluasi Pemahaman
+            Concept Checks, Formative Quizzes &amp; Learning Reflection
           </h1>
           <p className="mt-1 text-xs text-slate-600">
-            Uji pemahamanmu melalui soal pilihan ganda, interpretasi model ubin, dan menyusun ekspresi ubin secara langsung.
+            Work through each question calmly with no time limit. Test your understanding with symbolic input, multiple choice, visual tile interpretation, and building expressions directly with tiles.
           </p>
         </div>
 
@@ -119,14 +259,20 @@ export const Assessment: React.FC<AssessmentProps> = ({
             const count = ASSESSMENT_ITEMS.filter((item) =>
               (suite.units as readonly string[]).includes(item.unit)
             ).length;
+            const isExitTicket = suite.id === 'exit_ticket';
+
             return (
               <div
                 key={suite.id}
-                className="flex flex-col justify-between rounded-2xl border border-[#E5E0F3] bg-white p-5"
+                className={`flex flex-col justify-between rounded-2xl border p-5 ${
+                  isExitTicket
+                    ? 'border-[#27A89A] bg-[#F5FCFA]'
+                    : 'border-[#E5E0F3] bg-white'
+                }`}
               >
                 <div>
                   <span className="text-xs font-semibold text-[#27A89A]">
-                    {count} Soal · Tersedia
+                    {count} Questions · {isExitTicket ? 'Core Concept Check' : 'Available'}
                   </span>
                   <h2 className="mt-1 text-base font-bold text-[#39286F]">
                     {suite.title}
@@ -139,9 +285,13 @@ export const Assessment: React.FC<AssessmentProps> = ({
                 <button
                   type="button"
                   onClick={() => startQuiz(suite.id)}
-                  className="mt-4 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#5943A8] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#39286F]"
+                  className={`mt-4 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold text-white ${
+                    isExitTicket
+                      ? 'bg-[#27A89A] hover:bg-[#1E8E82]'
+                      : 'bg-[#5943A8] hover:bg-[#39286F]'
+                  }`}
                 >
-                  Mulai Kuis
+                  Start {isExitTicket ? 'Concept Check' : 'Quiz'}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -149,9 +299,11 @@ export const Assessment: React.FC<AssessmentProps> = ({
           })}
         </div>
 
+        {reflectionCard}
+
         {history.length > 0 && (
           <section className="rounded-2xl border border-[#E5E0F3] bg-white p-5">
-            <h2 className="text-base font-bold text-[#39286F]">Riwayat Evaluasi</h2>
+            <h2 className="text-base font-bold text-[#39286F]">Assessment History</h2>
             <div className="mt-3 divide-y divide-[#F0ECF9]">
               {history.slice(0, 6).map((item) => (
                 <div
@@ -161,7 +313,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
                   <div>
                     <p className="font-semibold text-[#39286F]">{item.quizTitle}</p>
                     <p className="text-slate-500">
-                      {new Date(item.completedAt).toLocaleString('id-ID')}
+                      {new Date(item.completedAt).toLocaleString('en-US')}
                     </p>
                   </div>
                   <span className="font-math text-sm font-bold text-[#27A89A] tabular-nums">
@@ -187,12 +339,12 @@ export const Assessment: React.FC<AssessmentProps> = ({
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#E5E0F3] bg-white p-6">
           <div>
-            <p className="text-xs font-semibold text-[#5943A8]">HASIL EVALUASI</p>
+            <p className="text-xs font-semibold text-[#5943A8]">ASSESSMENT RESULTS</p>
             <h1 className="mt-1 text-2xl font-extrabold text-[#39286F]">
               {activeSuite.title}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Skor kamu: <strong className="font-math text-[#39286F]">{score} dari {questions.length}</strong> ({percentage}%)
+              Your score: <strong className="font-math text-[#39286F]">{score} out of {questions.length}</strong> ({percentage}%)
             </p>
           </div>
 
@@ -203,14 +355,14 @@ export const Assessment: React.FC<AssessmentProps> = ({
               className="inline-flex items-center gap-1.5 rounded-xl border border-[#E5E0F3] bg-white px-4 py-2 text-xs font-semibold text-[#39286F] hover:bg-[#F7F5FC]"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Coba Lagi
+              Try Again
             </button>
             <button
               type="button"
               onClick={() => setStarted(false)}
               className="rounded-xl bg-[#5943A8] px-4 py-2 text-xs font-bold text-white hover:bg-[#39286F]"
             >
-              Pilih Kuis Lain
+              Choose Another Quiz
             </button>
           </div>
         </div>
@@ -218,10 +370,10 @@ export const Assessment: React.FC<AssessmentProps> = ({
         {weakTopicIds.length > 0 && (
           <div className="rounded-2xl border border-[#F4C95D] bg-[#FFFBEB] p-5">
             <h2 className="text-sm font-bold text-[#78530A]">
-              Saran Materi yang Perlu Diulang
+              Recommended Topics to Review
             </h2>
             <p className="mt-1 text-xs text-[#78530A]">
-              Berdasarkan jawabanmu, kamu disarankan meninjau kembali materi berikut di Learning Academy:
+              Based on your answers, reviewing these topics in Learning Academy is recommended:
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {weakTopicIds.map((topicId) => {
@@ -232,9 +384,9 @@ export const Assessment: React.FC<AssessmentProps> = ({
                     key={topicId}
                     type="button"
                     onClick={() => onReviewTopic(topicId)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-[#39286F] border border-[#F4C95D] hover:bg-[#FEF3C7]"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-[#F4C95D] bg-white px-3.5 py-2 text-xs font-semibold text-[#39286F] hover:bg-[#FEF3C7]"
                   >
-                    Pelajari {topic.title}
+                    Study {topic.title}
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 );
@@ -243,10 +395,11 @@ export const Assessment: React.FC<AssessmentProps> = ({
           </div>
         )}
 
-        {/* Pembahasan tiap soal */}
+        {/* Per-question explanation */}
         <div className="flex flex-col gap-3">
           {questions.map((q, idx) => {
             const correct = evaluateQuestion(q);
+            const userSymbolic = symbolicAnswers[q.id];
             return (
               <div
                 key={q.id}
@@ -254,7 +407,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-xs font-semibold text-slate-500">
-                    Soal {idx + 1} · {q.topic}
+                    Question {idx + 1} · {q.topic}
                   </span>
                   <span
                     className={`inline-flex items-center gap-1 text-xs font-bold ${
@@ -263,11 +416,11 @@ export const Assessment: React.FC<AssessmentProps> = ({
                   >
                     {correct ? (
                       <>
-                        <CheckCircle2 className="h-4 w-4" /> Benar
+                        <CheckCircle2 className="h-4 w-4" /> Correct
                       </>
                     ) : (
                       <>
-                        <XCircle className="h-4 w-4" /> Perlu Tinjauan
+                        <XCircle className="h-4 w-4" /> Needs Review
                       </>
                     )}
                   </span>
@@ -275,13 +428,29 @@ export const Assessment: React.FC<AssessmentProps> = ({
                 <p className="mt-1.5 text-sm font-semibold text-[#39286F]">
                   {q.prompt}
                 </p>
+                {q.type === 'symbolic_input' && (
+                  <p className="mt-1.5 font-math text-xs text-slate-600">
+                    Your answer:{' '}
+                    <strong className="text-[#39286F]">
+                      {userSymbolic?.trim() ? userSymbolic.trim() : '(blank)'}
+                    </strong>
+                    {q.acceptedSymbolicForms?.[0] && (
+                      <>
+                        {' '}
+                        · Answer key: <strong className="text-[#1E8E82]">{q.acceptedSymbolicForms[0]}</strong>
+                      </>
+                    )}
+                  </p>
+                )}
                 <p className="mt-2 rounded-xl bg-[#F7F5FC] px-3.5 py-2.5 text-xs leading-relaxed text-slate-700">
-                  <strong>Pembahasan:</strong> {q.explanation}
+                  <strong>Explanation:</strong> {q.explanation}
                 </p>
               </div>
             );
           })}
         </div>
+
+        {reflectionCard}
       </div>
     );
   }
@@ -298,7 +467,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
         <div>
           <p className="text-xs font-semibold text-[#5943A8]">{activeSuite.title}</p>
           <h2 className="text-base font-bold text-[#39286F]">
-            Soal {currentIdx + 1} dari {questions.length} · {currentQ.topic}
+            Question {currentIdx + 1} of {questions.length} · {currentQ.topic}
           </h2>
         </div>
 
@@ -307,12 +476,52 @@ export const Assessment: React.FC<AssessmentProps> = ({
           onClick={() => setStarted(false)}
           className="rounded-xl border border-[#E5E0F3] px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-[#F7F5FC]"
         >
-          Keluar Kuis
+          Exit Quiz
         </button>
       </div>
 
       <div className="rounded-2xl border border-[#E5E0F3] bg-white p-6">
         <p className="text-base font-bold text-[#39286F]">{currentQ.prompt}</p>
+        {currentQ.contextHint && (
+          <p className="mt-1 text-xs text-slate-600">{currentQ.contextHint}</p>
+        )}
+
+        {/* Symbolic Input Type */}
+        {currentQ.type === 'symbolic_input' && (
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {['x', ' + ', ' − ', '2', '4', '8'].map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  onClick={() =>
+                    setSymbolicAnswers((prev) => ({
+                      ...prev,
+                      [currentQ.id]: `${prev[currentQ.id] || ''}${token}`,
+                    }))
+                  }
+                  className="rounded-lg border border-[#E5E0F3] bg-[#F7F5FC] px-3 py-1.5 font-math text-xs font-bold text-[#39286F] hover:border-[#5943A8]"
+                >
+                  {token.trim()}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              value={symbolicAnswers[currentQ.id] || ''}
+              onChange={(e) =>
+                setSymbolicAnswers({
+                  ...symbolicAnswers,
+                  [currentQ.id]: e.target.value,
+                })
+              }
+              placeholder="Type your algebraic expression..."
+              aria-label={`Answer for ${currentQ.topic}`}
+              className="max-w-md rounded-xl border border-[#D6CEF0] bg-[#FCFBFF] px-4 py-2.5 font-math text-base font-bold text-[#39286F] focus:border-[#5943A8] focus:outline-none"
+            />
+          </div>
+        )}
 
         {/* Visual Tile Diagram if interpret_tiles */}
         {currentQ.type === 'interpret_tiles' && visualTiles.length > 0 && (
@@ -380,14 +589,14 @@ export const Assessment: React.FC<AssessmentProps> = ({
                 className="inline-flex items-center gap-1 rounded-xl border border-[#C94438]/30 bg-[#FFF2F0] px-3 py-2 text-xs font-semibold text-[#9B2F25] disabled:opacity-40"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Hapus Terakhir
+                Remove Last
               </button>
             </div>
 
             <div className="min-h-[120px] rounded-2xl border-2 border-dashed border-[#D6CEF0] bg-[#FCFBFF] p-4">
               {currentTileList.length === 0 ? (
                 <p className="text-xs text-slate-400">
-                  Klik tombol ubin di atas untuk menyusun jawabanmu.
+                  Click the tile buttons above to build your expression.
                 </p>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
@@ -399,7 +608,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
             </div>
 
             <p className="font-math text-sm font-bold text-[#39286F]">
-              Ekspresi tersusun: {formatExpression(currentTileList, true)}
+              Built expression: {formatExpression(currentTileList, true)}
             </p>
           </div>
         )}
@@ -412,7 +621,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
             onClick={() => setCurrentIdx(currentIdx - 1)}
             className="rounded-xl border border-[#E5E0F3] px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-[#F7F5FC] disabled:opacity-40"
           >
-            Sebelumnya
+            Previous
           </button>
 
           {currentIdx < questions.length - 1 ? (
@@ -421,7 +630,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
               onClick={() => setCurrentIdx(currentIdx + 1)}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#5943A8] px-4 py-2 text-xs font-bold text-white hover:bg-[#39286F]"
             >
-              Berikutnya
+              Next
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           ) : (
@@ -431,7 +640,7 @@ export const Assessment: React.FC<AssessmentProps> = ({
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#27A89A] px-5 py-2 text-xs font-bold text-white hover:bg-[#1E8E82]"
             >
               <ClipboardCheck className="h-4 w-4" />
-              Selesaikan & Lihat Hasil
+              Finish &amp; View Results
             </button>
           )}
         </div>

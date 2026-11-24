@@ -28,10 +28,10 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
         <div>
           <p className="text-xs font-semibold text-[#5943A8]">CHALLENGE ARENA</p>
           <h1 className="text-xl font-extrabold text-[#39286F]">
-            Arena Misi Algebra Quest
+            Algebra Quest Challenge Arena
           </h1>
           <p className="mt-0.5 text-xs text-slate-600">
-            Selesaikan misi bertahap dari dasar ubin hingga keseimbangan persamaan. Ketepatan dan pemahaman lebih diutamakan daripada kecepatan.
+            Complete step-by-step missions from tile basics to balancing equations. Accuracy and understanding matter more than speed.
           </p>
         </div>
 
@@ -39,7 +39,7 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
           <p className="font-math text-lg font-bold text-[#39286F] tabular-nums">
             {Object.keys(progress.completedMissions).length} / {MISSIONS_CONFIG.length}
           </p>
-          <p className="text-xs text-slate-500">Misi Diselesaikan</p>
+          <p className="text-xs text-slate-500">Missions Completed</p>
         </div>
       </div>
 
@@ -71,7 +71,7 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
                 {!unlocked && (
                   <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500">
                     <Lock className="h-3.5 w-3.5" />
-                    Selesaikan minimal 1 misi pada level sebelumnya
+                    Complete at least 1 mission in the previous level
                   </span>
                 )}
               </div>
@@ -92,7 +92,7 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
                         <div className="flex items-center justify-between gap-2">
                           <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#5943A8]">
                             <Flag className="h-3.5 w-3.5" />
-                            Misi {mission.order} · {mission.mode === 'equation' ? 'Persamaan' : 'Ekspresi'}
+                            Mission {mission.order} · {mission.mode === 'equation' ? 'Equation' : 'Expression'}
                           </span>
                           <span className="font-math text-xs font-bold text-[#39286F]">
                             +{mission.rewardXp} XP
@@ -111,7 +111,7 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
                         {completion ? (
                           <div className="flex items-center gap-1.5">
                             <CheckCircle2 className="h-4 w-4 text-[#27A89A]" />
-                            <div className="flex items-center gap-0.5" aria-label={`${completion.stars} dari 3 bintang`}>
+                            <div className="flex items-center gap-0.5" aria-label={`${completion.stars} out of 3 stars`}>
                               {[1, 2, 3].map((starIdx) => (
                                 <Star
                                   key={starIdx}
@@ -125,7 +125,7 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-500">Belum selesai</span>
+                          <span className="text-xs text-slate-500">Not completed</span>
                         )}
 
                         <button
@@ -134,7 +134,7 @@ export const ChallengeArena: React.FC<ChallengeArenaProps> = ({
                           onClick={() => onStartMission(mission)}
                           className="inline-flex items-center gap-1.5 rounded-xl bg-[#5943A8] px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#39286F] disabled:bg-slate-300 whitespace-nowrap"
                         >
-                          {completion ? 'Coba Ulang' : 'Mulai Misi'}
+                          {completion ? 'Try Again' : 'Start Mission'}
                           <ArrowRight className="h-3.5 w-3.5" />
                         </button>
                       </div>

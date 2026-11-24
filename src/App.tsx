@@ -2,17 +2,26 @@ import React, { useEffect, useState } from 'react';
 import {
   Award,
   BookOpen,
+  Calculator,
   CheckSquare,
   Flag,
   GraduationCap,
   Home,
+  Map,
   Menu,
   Shapes,
   Star,
   X,
 } from 'lucide-react';
-import { AppTab, Mission, Progress } from './types/algebra';
-import { TOPICS_CONFIG } from './data/curriculumConfig';
+import {
+  AppTab,
+  CtlActivityConfig,
+  Mission,
+  Progress,
+  ReasoningEntry,
+  ReflectionEntry,
+} from './types/algebra';
+import { TOPICS_CONFIG, MISSIONS_CONFIG } from './data/curriculumConfig';
 import {
   calculateLevelFromXp,
   calculateMissionStars,
@@ -24,39 +33,93 @@ import {
   resetProgress,
   saveProgress,
 } from './storage/ProgressStorage';
+import {
+  PersistedWorkspaceSession,
+  clearWorkspaceSession,
+  loadWorkspaceSession,
+  saveWorkspaceSession,
+} from './storage/WorkspaceStorage';
 import { Dashboard } from './components/Dashboard';
 import { LearningAcademy } from './components/LearningAcademy';
-import { AlgebraWorkshop } from './components/AlgebraWorkshop';
+import { StoryMission } from './components/StoryMission';
+import { AlgebraWorkshop, WorkspaceSessionDraft } from './components/AlgebraWorkshop';
+import { OperationLab } from './components/OperationLab';
 import { ChallengeArena } from './components/ChallengeArena';
 import { Assessment } from './components/Assessment';
 import { AchievementProgress } from './components/AchievementProgress';
 import { TeacherMode } from './components/TeacherMode';
 
-const NAV_ITEMS: Array<{ id: AppTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'dashboard', label: 'Beranda', icon: Home },
-  { id: 'academy', label: 'Belajar', icon: BookOpen },
+const NAV_ITEMS: Array<{
+  id: AppTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'dashboard', label: 'Home', icon: Home },
+  { id: 'academy', label: 'Learn', icon: BookOpen },
+  { id: 'story', label: 'Missions', icon: Map },
   { id: 'workshop', label: 'Workshop', icon: Shapes },
-  { id: 'challenge', label: 'Tantangan', icon: Flag },
-  { id: 'assessment', label: 'Kuis', icon: CheckSquare },
-  { id: 'achievements', label: 'Pencapaian', icon: Award },
-  { id: 'teacher', label: 'Mode Guru', icon: GraduationCap },
+  { id: 'oplab', label: 'Operation Lab', icon: Calculator },
+  { id: 'challenge', label: 'Challenges', icon: Flag },
+  { id: 'assessment', label: 'Quiz', icon: CheckSquare },
+  { id: 'achievements', label: 'Achievements', icon: Award },
+  { id: 'teacher', label: 'Teacher Mode', icon: GraduationCap },
 ];
 
 export default function App() {
   const [initialLoad] = useState(() => loadProgress());
+  const [initialWorkspaceLoad] = useState(() => loadWorkspaceSession());
   const [progress, setProgress] = useState<Progress>(initialLoad.progress);
   const [storageAvailable] = useState<boolean>(initialLoad.storageAvailable);
-  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
-  const [activeMission, setActiveMission] = useState<Mission | null>(null);
+  const [workspaceSession, setWorkspaceSession] = useState<PersistedWorkspaceSession | null>(
+    initialWorkspaceLoad.session
+  );
+  const [workspaceResetVersion, setWorkspaceResetVersion] = useState(0);
+  const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState<{
+    ok: boolean;
+    savedAt: string;
+    corruptedWarning?: string | null;
+  }>(() => ({
+    ok: initialWorkspaceLoad.status !== 'unavailable',
+    savedAt: initialWorkspaceLoad.session?.savedAt || '',
+    corruptedWarning:
+      initialWorkspaceLoad.status === 'corrupted'
+        ? initialWorkspaceLoad.errorMessage ||
+          'Saved workspace data was corrupted or unreadable, so the board was reset safely.'
+        : null,
+  }));
+
+  const [activeTab, setActiveTab] = useState<AppTab>(
+    initialLoad.progress.lastActiveTab || 'dashboard'
+  );
+  const [activeMission, setActiveMission] = useState<Mission | null>(() => {
+    const savedTab = initialLoad.progress.lastActiveTab;
+    const savedMissionId = initialWorkspaceLoad.session?.activeMissionId;
+    if (savedTab === 'workshop' && savedMissionId) {
+      return MISSIONS_CONFIG.find((m) => m.id === savedMissionId) || null;
+    }
+    return null;
+  });
   const [academyTopicId, setAcademyTopicId] = useState<string | null>(null);
+  const [initialQuizId, setInitialQuizId] = useState<string | null>(null);
   const [teacherDemoMode, setTeacherDemoMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(() => {
+    if (initialLoad.corrupted) {
+      return 'Previous local progress data was corrupted or unreadable, so progress was safely reset.';
+    }
+    if (initialWorkspaceLoad.status === 'corrupted') {
+      return (
+        initialWorkspaceLoad.errorMessage ||
+        'Previous saved workspace data was corrupted or invalid, so a new workspace was started.'
+      );
+    }
+    return null;
+  });
 
   useEffect(() => {
     const res = saveProgress(progress);
     if (!res.ok) {
-      setSaveNotice('Penyimpanan lokal tidak tersedia pada mode browser ini.');
+      setSaveNotice('Local storage is unavailable in this browser mode.');
     }
   }, [progress]);
 
@@ -64,15 +127,66 @@ export default function App() {
 
   const navigateTo = (tab: AppTab) => {
     setActiveTab(tab);
+    setProgress((prev) => ({ ...prev, lastActiveTab: tab }));
     setMobileMenuOpen(false);
     if (tab !== 'workshop') {
       setActiveMission(null);
+    } else if (workspaceSession?.activeMissionId) {
+      const resumedMission =
+        MISSIONS_CONFIG.find((m) => m.id === workspaceSession.activeMissionId) || null;
+      setActiveMission(resumedMission);
     }
+    if (tab !== 'assessment') {
+      setInitialQuizId(null);
+    }
+  };
+
+  const handleContinueWorkspace = () => {
+    const resumedMission = workspaceSession?.activeMissionId
+      ? MISSIONS_CONFIG.find((m) => m.id === workspaceSession.activeMissionId) || null
+      : null;
+    setActiveMission(resumedMission);
+    setActiveTab('workshop');
+    setProgress((prev) => ({ ...prev, lastActiveTab: 'workshop' }));
+    setMobileMenuOpen(false);
+  };
+
+  const handleWorkspaceSessionChange = (draft: WorkspaceSessionDraft) => {
+    const res = saveWorkspaceSession(draft);
+    setWorkspaceSession(res.session);
+    setWorkspaceSaveStatus({
+      ok: res.ok,
+      savedAt: res.savedAt,
+      corruptedWarning: null,
+    });
+  };
+
+  const handleResetWorkspaceSession = () => {
+    clearWorkspaceSession();
+    setWorkspaceSession(null);
+    setActiveMission(null);
+    setWorkspaceResetVersion((v) => v + 1);
+    setWorkspaceSaveStatus({
+      ok: storageAvailable,
+      savedAt: '',
+      corruptedWarning: null,
+    });
+    setSaveNotice(
+      'New workspace is ready. Your XP, stars, badges, and completed missions remain saved.'
+    );
+  };
+
+  const handleLaunchExitTicket = () => {
+    setInitialQuizId('exit_ticket');
+    setActiveTab('assessment');
+    setProgress((prev) => ({ ...prev, lastActiveTab: 'assessment' }));
+    setMobileMenuOpen(false);
   };
 
   const handleStartMission = (mission: Mission) => {
     setActiveMission(mission);
     setActiveTab('workshop');
+    setProgress((prev) => ({ ...prev, lastActiveTab: 'workshop' }));
     setMobileMenuOpen(false);
   };
 
@@ -82,7 +196,126 @@ export default function App() {
       setAcademyTopicId(matchingTopic.id);
     }
     setActiveTab('academy');
+    setProgress((prev) => ({ ...prev, lastActiveTab: 'academy' }));
     setMobileMenuOpen(false);
+  };
+
+  const handleSaveReasoning = (
+    source: ReasoningEntry['source'],
+    id: string,
+    title: string,
+    reasonText: string
+  ) => {
+    setProgress((prev) => {
+      const filtered = prev.reasoningNotes.filter(
+        (n) => !(n.source === source && n.id === id)
+      );
+      const nextEntry: ReasoningEntry = {
+        id,
+        source,
+        title,
+        reasonText,
+        updatedAt: new Date().toISOString(),
+      };
+      return {
+        ...prev,
+        reasoningNotes: [nextEntry, ...filtered].slice(0, 40),
+      };
+    });
+  };
+
+  const handleCompleteCtlActivity = (activity: CtlActivityConfig, reasonText: string) => {
+    setProgress((prev) => {
+      const alreadyDone = prev.completedCtlActivities.includes(activity.id);
+      const earnedXp = alreadyDone ? 0 : activity.rewardXp;
+      const nextCtl = alreadyDone
+        ? prev.completedCtlActivities
+        : [...prev.completedCtlActivities, activity.id];
+
+      const filteredNotes = prev.reasoningNotes.filter(
+        (n) => !(n.source === 'ctl' && n.id === activity.id)
+      );
+      const nextNotes: ReasoningEntry[] = [
+        {
+          id: activity.id,
+          source: 'ctl',
+          title: activity.title,
+          reasonText,
+          updatedAt: new Date().toISOString(),
+        },
+        ...filteredNotes,
+      ];
+      const slicedNotes = nextNotes.slice(0, 40);
+
+      let updated: Progress = {
+        ...prev,
+        xp: prev.xp + earnedXp,
+        completedCtlActivities: nextCtl,
+        reasoningNotes: slicedNotes,
+      };
+      updated = appendProgressLog(updated, {
+        activityType: 'ctl',
+        title: activity.title,
+        topic: 'Core Story Missions',
+        detail: alreadyDone
+          ? 'Updated mission reasoning note'
+          : 'Completed mission & reasoning note',
+        xpEarned: earnedXp,
+      });
+      updated.badgeIds = evaluateUnlockedBadges(updated);
+      updated.level = calculateLevelFromXp(updated.xp).level;
+      return updated;
+    });
+  };
+
+  const handleCompleteOpLabExercise = (
+    exerciseId: string,
+    opTitle: string,
+    problemLabel: string,
+    reasonText?: string
+  ) => {
+    setProgress((prev) => {
+      const alreadyDone = prev.completedOpLabIds.includes(exerciseId);
+      const earnedXp = alreadyDone ? 0 : 40;
+      const nextIds = alreadyDone
+        ? prev.completedOpLabIds
+        : [...prev.completedOpLabIds, exerciseId];
+
+      let nextNotes = prev.reasoningNotes;
+      if (reasonText) {
+        const filtered = prev.reasoningNotes.filter(
+          (n) => !(n.source === 'oplab' && n.id === exerciseId)
+        );
+        const addedNotes: ReasoningEntry[] = [
+          {
+            id: exerciseId,
+            source: 'oplab',
+            title: `${opTitle}: ${problemLabel}`,
+            reasonText,
+            updatedAt: new Date().toISOString(),
+          },
+          ...filtered,
+        ];
+        nextNotes = addedNotes.slice(0, 40);
+      }
+
+      let updated: Progress = {
+        ...prev,
+        xp: prev.xp + earnedXp,
+        completedOpLabIds: nextIds,
+        reasoningNotes: nextNotes,
+      };
+      updated = appendProgressLog(updated, {
+        activityType: 'oplab',
+        title: `${opTitle}: ${problemLabel}`,
+        topic: 'Operation Lab',
+        detail: alreadyDone ? 'Repeated operation practice' : 'Completed operation practice',
+        xpEarned: earnedXp,
+      });
+      updated.badgeIds = evaluateUnlockedBadges(updated);
+      updated.level = calculateLevelFromXp(updated.xp).level;
+      return updated;
+    });
   };
 
   const handleCompleteLesson = (
@@ -104,9 +337,9 @@ export default function App() {
       };
       updated = appendProgressLog(updated, {
         activityType: 'academy',
-        title: `Materi: ${lessonTitle}`,
+        title: `Lesson: ${lessonTitle}`,
         topic: topicTitle,
-        detail: alreadyDone ? 'Mengulang cek pemahaman' : 'Menuntaskan cek pemahaman',
+        detail: alreadyDone ? 'Reviewed concept check' : 'Completed concept check',
         xpEarned: earnedXp,
       });
       updated.badgeIds = evaluateUnlockedBadges(updated);
@@ -144,9 +377,9 @@ export default function App() {
 
       updated = appendProgressLog(updated, {
         activityType: 'mission',
-        title: `Misi Selesai: ${mission.title}`,
+        title: `Mission Completed: ${mission.title}`,
         topic: mission.topic,
-        detail: `${stars} bintang (${attempts} percobaan)`,
+        detail: `${stars} star(s) (${attempts} attempt(s))`,
         xpEarned: earnedXp,
       });
       updated.badgeIds = evaluateUnlockedBadges(updated);
@@ -180,12 +413,32 @@ export default function App() {
       updated = appendProgressLog(updated, {
         activityType: 'assessment',
         title: entry.quizTitle,
-        topic: 'Evaluasi',
-        detail: `Skor ${entry.score}/${entry.totalQuestions} (${entry.percentage}%)`,
+        topic: 'Assessment',
+        detail: `Score ${entry.score}/${entry.totalQuestions} (${entry.percentage}%)`,
         xpEarned: earnedXp,
       });
       updated.badgeIds = evaluateUnlockedBadges(updated);
       updated.level = calculateLevelFromXp(updated.xp).level;
+      return updated;
+    });
+  };
+
+  const handleSaveReflection = (reflection: Omit<ReflectionEntry, 'updatedAt'>) => {
+    setProgress((prev) => {
+      let updated: Progress = {
+        ...prev,
+        reflection: {
+          ...reflection,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      updated = appendProgressLog(updated, {
+        activityType: 'reflection',
+        title: 'Student Learning Reflection',
+        topic: 'Learning Reflection',
+        detail: reflection.understandingSummary.slice(0, 80),
+        xpEarned: 0,
+      });
       return updated;
     });
   };
@@ -208,8 +461,44 @@ export default function App() {
     const fresh = resetProgress();
     setProgress(fresh);
     setActiveMission(null);
-    setSaveNotice('Progres lokal telah direset ke kondisi awal.');
+    setSaveNotice('Local progress has been reset to its initial state.');
   };
+
+  const activeMissionSavedReason = activeMission
+    ? progress.reasoningNotes.find(
+        (n) => n.source === 'mission' && n.id === activeMission.id
+      )?.reasonText || ''
+    : '';
+
+  if (activeTab === 'workshop') {
+    return (
+      <AlgebraWorkshop
+        activeMission={activeMission}
+        savedReason={activeMissionSavedReason}
+        initialWorkspaceSession={workspaceSession}
+        workspaceResetVersion={workspaceResetVersion}
+        workspaceStorageStatus={workspaceSaveStatus}
+        onWorkspaceSessionChange={handleWorkspaceSessionChange}
+        onStartNewWorkspace={handleResetWorkspaceSession}
+        onBackToApp={() => {
+          setActiveMission(null);
+          navigateTo('dashboard');
+        }}
+        onExitMission={() => {
+          setActiveMission(null);
+          navigateTo('challenge');
+        }}
+        onMissionSuccess={handleMissionSuccess}
+        onSaveReasoning={(mission, reasonText) =>
+          handleSaveReasoning('mission', mission.id, mission.title, reasonText)
+        }
+        onZeroPairsCleared={(count) => incrementStat('zeroPairsCleared', count)}
+        onLikeTermsCombined={() => incrementStat('likeTermsCombined', 1)}
+        onEquationSolved={() => incrementStat('equationsSolved', 1)}
+        onMisconceptionGuided={() => incrementStat('misconceptionsGuided', 1)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F5FC] text-[#1E163B]">
@@ -220,14 +509,14 @@ export default function App() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen((v) => !v)}
-              aria-label={mobileMenuOpen ? 'Tutup menu navigasi' : 'Buka menu navigasi'}
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white hover:bg-white/20 lg:hidden"
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
 
             <a
-              href="#beranda"
+              href="#home"
               onClick={(e) => {
                 e.preventDefault();
                 navigateTo('dashboard');
@@ -254,10 +543,10 @@ export default function App() {
       {/* Mobile Drawer Navigation */}
       {mobileMenuOpen && (
         <nav
-          aria-label="Navigasi Mobile"
+          aria-label="Mobile Navigation"
           className="border-b border-[#E5E0F3] bg-white px-4 py-3 lg:hidden"
         >
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const active = activeTab === item.id;
@@ -286,7 +575,7 @@ export default function App() {
         {/* Desktop Sidebar Navigation */}
         <aside className="hidden w-56 shrink-0 lg:block">
           <nav
-            aria-label="Navigasi Utama"
+            aria-label="Main Navigation"
             className="sticky top-20 flex flex-col gap-1.5 rounded-2xl border border-[#E5E0F3] bg-white p-3"
           >
             {NAV_ITEMS.map((item) => {
@@ -315,7 +604,7 @@ export default function App() {
             })}
 
             <div className="mt-3 border-t border-[#F0ECF9] px-2 pt-3 text-[11px] leading-relaxed text-slate-500">
-              Explore · Manipulate · Solve · Master Algebra
+              Explore · Manipulate · Reason · Master Algebra
             </div>
           </nav>
         </aside>
@@ -324,16 +613,33 @@ export default function App() {
         <main className="min-w-0 flex-1">
           {saveNotice && (
             <div
-              role="status"
-              className="mb-4 flex items-center justify-between rounded-xl border border-[#E5E0F3] bg-white px-4 py-2.5 text-xs text-slate-700"
+              role={
+                saveNotice.includes('corrupted') ||
+                saveNotice.includes('unavailable') ||
+                saveNotice.includes('invalid') ||
+                saveNotice.includes('Unrecognized')
+                  ? 'alert'
+                  : 'status'
+              }
+              className={`mb-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs ${
+                saveNotice.includes('corrupted') ||
+                saveNotice.includes('unavailable') ||
+                saveNotice.includes('invalid') ||
+                saveNotice.includes('Unrecognized')
+                  ? 'border-[#EF8748] bg-[#FFF8F3] text-[#8F3E10]'
+                  : 'border-[#E5E0F3] bg-white text-slate-700'
+              }`}
             >
               <span>{saveNotice}</span>
               <button
                 type="button"
-                onClick={() => setSaveNotice(null)}
-                className="font-semibold text-[#5943A8]"
+                onClick={() => {
+                  setSaveNotice(null);
+                  setWorkspaceSaveStatus((prev) => ({ ...prev, corruptedWarning: null }));
+                }}
+                className="shrink-0 font-semibold text-[#5943A8] underline"
               >
-                Tutup
+                Close
               </button>
             </div>
           )}
@@ -342,6 +648,9 @@ export default function App() {
             <Dashboard
               progress={progress}
               teacherDemoMode={teacherDemoMode}
+              savedWorkspace={workspaceSession}
+              onContinueWorkspace={handleContinueWorkspace}
+              onResetWorkspaceSession={handleResetWorkspaceSession}
               onUpdateNickname={(nickname) =>
                 setProgress((prev) => ({ ...prev, nickname }))
               }
@@ -360,18 +669,21 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'workshop' && (
-            <AlgebraWorkshop
-              activeMission={activeMission}
-              onExitMission={() => {
-                setActiveMission(null);
-                setActiveTab('challenge');
-              }}
-              onMissionSuccess={handleMissionSuccess}
-              onZeroPairsCleared={(count) => incrementStat('zeroPairsCleared', count)}
-              onLikeTermsCombined={() => incrementStat('likeTermsCombined', 1)}
-              onEquationSolved={() => incrementStat('equationsSolved', 1)}
-              onMisconceptionGuided={() => incrementStat('misconceptionsGuided', 1)}
+          {activeTab === 'story' && (
+            <StoryMission
+              progress={progress}
+              onCompleteActivity={handleCompleteCtlActivity}
+              onSaveReasoning={handleSaveReasoning}
+              onGoToWorkshop={() => navigateTo('workshop')}
+              onGoToExitTicket={handleLaunchExitTicket}
+            />
+          )}
+
+          {activeTab === 'oplab' && (
+            <OperationLab
+              progress={progress}
+              onCompleteExercise={handleCompleteOpLabExercise}
+              onSaveReasoning={handleSaveReasoning}
             />
           )}
 
@@ -386,7 +698,10 @@ export default function App() {
           {activeTab === 'assessment' && (
             <Assessment
               history={progress.assessmentHistory}
+              savedReflection={progress.reflection}
+              initialQuizId={initialQuizId}
               onFinishQuiz={handleFinishQuiz}
+              onSaveReflection={handleSaveReflection}
               onReviewTopic={(topicId) => {
                 setAcademyTopicId(topicId);
                 navigateTo('academy');
@@ -412,7 +727,9 @@ export default function App() {
                 setAcademyTopicId(topicId);
                 navigateTo('academy');
               }}
+              onLaunchExitTicket={handleLaunchExitTicket}
               onNavigate={navigateTo}
+              onResetWorkspaceSession={handleResetWorkspaceSession}
             />
           )}
         </main>

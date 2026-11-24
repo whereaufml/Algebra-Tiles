@@ -1,5 +1,6 @@
 import { EquationState, Tile, TileSign, TileType } from '../types/algebra';
 import {
+  clearCancelledZeroPairs,
   createTile,
   createTilesFromSpec,
   eliminateZeroPairs,
@@ -20,10 +21,10 @@ export function createInitialEquationState(
     rightTiles,
     initialLeft: summarizeTiles(leftTiles),
     initialRight: summarizeTiles(rightTiles),
-    lastActionNote: `Persamaan awal: ${formatExpression(leftTiles, true)} = ${formatExpression(
+    lastActionNote: `Initial equation: ${formatExpression(leftTiles, true)} = ${formatExpression(
       rightTiles,
       true
-    )}. Terapkan operasi yang sama pada kedua sisi untuk menjaga kesetaraan.`,
+    )}. Apply the same operation to both sides to keep the equation balanced.`,
     isBalanced: true,
   };
 }
@@ -77,13 +78,13 @@ export function validateEquationEquality(
     deltaLeft.constant !== deltaRight.constant
       ? Math.abs(deltaLeft.x2) + Math.abs(deltaLeft.x) + Math.abs(deltaLeft.constant) >
         Math.abs(deltaRight.x2) + Math.abs(deltaRight.x) + Math.abs(deltaRight.constant)
-        ? 'Sisi Kiri'
-        : 'Sisi Kanan'
-      : 'salah satu sisi';
+        ? 'Left Side'
+        : 'Right Side'
+      : 'one side';
 
   return {
     isBalanced: false,
-    reason: `Peringatan Kesetaraan: ${changedSide} berubah tanpa operasi yang sama di sisi lainnya! Kedua sisi persamaan harus selalu diperlakukan setara agar solusi tetap benar.`,
+    reason: `Balance Warning: The ${changedSide} changed without the same operation on the other side! Always apply identical operations to both sides to preserve equality.`,
   };
 }
 
@@ -127,15 +128,15 @@ export function applyTileToEquationSide(
   let message = '';
   if (side === 'both') {
     message = balanceCheck.isBalanced
-      ? `Operasi setara: menambahkan ${termStr} pada kedua sisi. Persamaan tetap seimbang (${formatEquation(
+      ? `Balanced operation: added ${termStr} to both sides. The equation remains balanced (${formatEquation(
           nextLeft,
           nextRight,
           true
         )}).`
-      : balanceCheck.reason || 'Persamaan tidak seimbang.';
+      : balanceCheck.reason || 'The equation is unbalanced.';
   } else {
     message = balanceCheck.isBalanced
-      ? `Kedua sisi kembali seimbang: ${formatEquation(nextLeft, nextRight, true)}.`
+      ? `Both sides are balanced again: ${formatEquation(nextLeft, nextRight, true)}.`
       : balanceCheck.reason!;
   }
 
@@ -167,12 +168,12 @@ export function eliminateEquationZeroPairs(state: EquationState): EquationOperat
 
   const message =
     totalRemoved > 0
-      ? `Berhasil meniadakan ${totalRemoved} zero pair! Persamaan menjadi ${formatEquation(
+      ? `Cancelled ${totalRemoved} zero pair(s)! Faded zero-pair tiles are no longer counted, leaving the active equation ${formatEquation(
           leftRes.remainingTiles,
           rightRes.remainingTiles,
           true
         )}.`
-      : 'Tidak ada zero pair yang perlu disederhanakan pada kedua sisi persamaan.';
+      : 'There are no active zero pairs to simplify on either side of the equation.';
 
   return {
     nextState: {
@@ -184,6 +185,32 @@ export function eliminateEquationZeroPairs(state: EquationState): EquationOperat
       lastActionNote: message,
     },
     isBalanced: balanceCheck.isBalanced,
+    message,
+  };
+}
+
+export function clearEquationCancelledTiles(state: EquationState): EquationOperationFeedback {
+  const leftClear = clearCancelledZeroPairs(state.leftTiles);
+  const rightClear = clearCancelledZeroPairs(state.rightTiles);
+  const totalCleared = leftClear.clearedCount + rightClear.clearedCount;
+
+  const message =
+    totalCleared > 0
+      ? `Cleared ${totalCleared} faded zero-pair tile(s). The active equation remains ${formatEquation(
+          leftClear.remainingTiles,
+          rightClear.remainingTiles,
+          true
+        )}.`
+      : 'There are no faded tiles to clear on the equation balance board.';
+
+  return {
+    nextState: {
+      ...state,
+      leftTiles: leftClear.remainingTiles,
+      rightTiles: rightClear.remainingTiles,
+      lastActionNote: message,
+    },
+    isBalanced: state.isBalanced,
     message,
   };
 }
@@ -204,7 +231,7 @@ export function checkEquationSolved(
       solved: false,
       message:
         balance.reason ||
-        'Persamaan belum setara! Pastikan setiap operasi diterapkan pada sisi kiri dan sisi kanan secara seimbang.',
+        'The equation is not balanced yet! Make sure every operation is applied equally to both the left and right sides.',
     };
   }
 
@@ -214,7 +241,7 @@ export function checkEquationSolved(
     return {
       solved: false,
       message:
-        'Kedua sisi sudah seimbang! Sekarang klik "Sederhanakan Zero Pair" untuk meniadakan pasangan nol sehingga variabel x berdiri sendiri.',
+        'Both sides are balanced! Now click "Match Zero Pairs" to cancel opposite tiles and isolate x.',
     };
   }
 
@@ -231,12 +258,12 @@ export function checkEquationSolved(
     if (expectedValue !== undefined && right.constant !== expectedValue) {
       return {
         solved: false,
-        message: `Hasil saat ini x = ${right.constant}, periksa kembali keseimbangan operasi.`,
+        message: `Current result is x = ${right.constant}. Double-check your balanced operations.`,
       };
     }
     return {
       solved: true,
-      message: `Hebat! Persamaan terselesaikan secara setara hingga diperoleh x = ${right.constant}.`,
+      message: `Great job! The equation is balanced and solved to give x = ${right.constant}.`,
     };
   }
 
@@ -244,21 +271,21 @@ export function checkEquationSolved(
     if (expectedValue !== undefined && left.constant !== expectedValue) {
       return {
         solved: false,
-        message: `Hasil saat ini ${left.constant} = x, periksa kembali keseimbangan operasi.`,
+        message: `Current result is ${left.constant} = x. Double-check your balanced operations.`,
       };
     }
     return {
       solved: true,
-      message: `Hebat! Persamaan terselesaikan secara setara hingga diperoleh x = ${left.constant}.`,
+      message: `Great job! The equation is balanced and solved to give x = ${left.constant}.`,
     };
   }
 
   return {
     solved: false,
-    message: `Persamaan saat ini masih ${formatEquation(
+    message: `Current equation is ${formatEquation(
       state.leftTiles,
       state.rightTiles,
       true
-    )}. Isolasikan tepat satu ubin +x di satu sisi dan konstanta di sisi lainnya.`,
+    )}. Isolate a single +x tile on one side and constants on the other side.`,
   };
 }

@@ -4,50 +4,66 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
   {
     id: 'badge-algebra-builder',
     title: 'Algebra Builder',
-    description: 'Menyusun ekspresi aljabar pertama dengan ubin x², x, dan 1.',
-    criteriaText: 'Selesaikan minimal 1 misi menyusun ekspresi.',
+    description: 'Build your first algebraic expression using x², x, and 1 tiles.',
+    criteriaText: 'Complete at least 1 expression-building mission.',
     iconKey: 'builder',
     accentColor: '#3A86D8',
   },
   {
     id: 'badge-like-term-explorer',
     title: 'Like-Term Explorer',
-    description: 'Menggabungkan suku sejenis dengan tepat tanpa mencampur suku berbeda.',
-    criteriaText: 'Selesaikan misi Suku Sejenis atau gabungkan suku sejenis 3 kali.',
+    description: 'Combine like terms accurately without mixing unlike terms.',
+    criteriaText: 'Complete a Like Terms mission or combine like terms 3 times.',
     iconKey: 'liketerms',
     accentColor: '#27A89A',
   },
   {
     id: 'badge-zero-pair-master',
     title: 'Zero Pair Master',
-    description: 'Memahami bagaimana pasangan ubin berlawanan tanda saling meniadakan.',
-    criteriaText: 'Bentuk & sederhanakan minimal 3 zero pair atau selesaikan misi Zero Pairs.',
+    description: 'Understand how opposite-sign tiles cancel each other out to zero.',
+    criteriaText: 'Form and cancel at least 3 zero pairs or complete a Zero Pairs mission.',
     iconKey: 'zeropair',
     accentColor: '#EF8748',
   },
   {
     id: 'badge-equation-solver',
     title: 'Equation Solver',
-    description: 'Menjaga kesetaraan kedua sisi papan persamaan hingga menemukan nilai x.',
-    criteriaText: 'Selesaikan minimal 1 misi keseimbangan persamaan.',
+    description: 'Keep both sides of the equation balanced until you isolate x.',
+    criteriaText: 'Complete at least 1 equation balance mission.',
     iconKey: 'equation',
     accentColor: '#5943A8',
   },
   {
     id: 'badge-academy-scholar',
     title: 'Academy Scholar',
-    description: 'Menuntaskan materi visual dan cek pemahaman di Learning Academy.',
-    criteriaText: 'Selesaikan minimal 4 submateri Learning Academy.',
+    description: 'Complete visual lessons and concept checks in the Learning section.',
+    criteriaText: 'Complete at least 4 lessons in Learn.',
     iconKey: 'academy',
     accentColor: '#F4C95D',
   },
   {
     id: 'badge-quiz-champion',
     title: 'Quiz Champion',
-    description: 'Menunjukkan penguasaan konsep pada evaluasi kuis dengan skor >= 80%.',
-    criteriaText: 'Raih skor minimal 80% pada salah satu kuis.',
+    description: 'Demonstrate concept mastery with a score of 80% or higher on a quiz.',
+    criteriaText: 'Score at least 80% on any quiz.',
     iconKey: 'quiz',
     accentColor: '#39286F',
+  },
+  {
+    id: 'badge-distributive-builder',
+    title: 'Distributive Builder',
+    description: 'Multiply the factor outside parentheses across every term inside accurately.',
+    criteriaText: 'Complete Mission 3 or a distributive multiplication exercise in Operation Lab.',
+    iconKey: 'builder',
+    accentColor: '#27A89A',
+  },
+  {
+    id: 'badge-division-detective',
+    title: 'Division Detective',
+    description: 'Divide an algebraic expression into equal groups by a non-zero number.',
+    criteriaText: 'Complete a division exercise in Operation Lab.',
+    iconKey: 'liketerms',
+    accentColor: '#3A86D8',
   },
 ];
 
@@ -112,6 +128,17 @@ export function evaluateUnlockedBadges(progress: Progress): string[] {
 
   if (progress.assessmentHistory.some((a) => a.percentage >= 80)) {
     unlocked.add('badge-quiz-champion');
+  }
+
+  if (
+    progress.completedCtlActivities.includes('ctl-activity-3') ||
+    progress.completedOpLabIds.some((id) => id.includes('mul'))
+  ) {
+    unlocked.add('badge-distributive-builder');
+  }
+
+  if (progress.completedOpLabIds.some((id) => id.includes('div'))) {
+    unlocked.add('badge-division-detective');
   }
 
   return Array.from(unlocked);

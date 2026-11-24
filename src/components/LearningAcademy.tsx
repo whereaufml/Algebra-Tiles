@@ -78,7 +78,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
         <div>
           <p className="text-xs font-semibold text-[#5943A8]">LEARNING ACADEMY</p>
           <h1 className="text-xl font-extrabold text-[#39286F]">
-            Belajar Konsep Aljabar Secara Visual
+            Explore Algebraic Concepts Visually
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -92,14 +92,14 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
             }`}
           >
             <BookMarked className="h-4 w-4" />
-            Glosarium Aljabar
+            Algebra Glossary
           </button>
           <button
             type="button"
             onClick={onGoToWorkshop}
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#27A89A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1E8E82] whitespace-nowrap"
           >
-            Coba di Workshop
+            Try in Workshop
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -109,9 +109,9 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
         <section className="rounded-2xl border border-[#E5E0F3] bg-white p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[#39286F]">Glosarium Istilah Aljabar</h2>
+              <h2 className="text-lg font-bold text-[#39286F]">Algebra Glossary</h2>
               <p className="text-xs text-slate-600">
-                Referensi singkat istilah penting selama menggunakan Algebra Tiles.
+                Quick reference for key terms while working with Algebra Tiles.
               </p>
             </div>
             <button
@@ -119,7 +119,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
               onClick={() => setShowGlossary(false)}
               className="rounded-xl border border-[#E5E0F3] px-3 py-1.5 text-xs font-semibold text-[#39286F] hover:bg-[#F7F5FC]"
             >
-              Tutup Glosarium
+              Close Glossary
             </button>
           </div>
 
@@ -134,7 +134,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                   {item.definition}
                 </p>
                 <p className="mt-2 font-math text-xs font-medium text-[#5943A8]">
-                  Contoh: {item.example}
+                  Example: {item.example}
                 </p>
               </div>
             ))}
@@ -145,7 +145,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
           {/* Topic Sidebar */}
           <aside className="flex flex-col gap-2 rounded-2xl border border-[#E5E0F3] bg-white p-4">
             <h2 className="px-1 text-xs font-bold uppercase tracking-wider text-[#5943A8]">
-              Daftar Topik
+              Topics
             </h2>
             {TOPICS_CONFIG.map((topic) => {
               const active = topic.id === activeTopic.id;
@@ -172,7 +172,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                     )}
                   </div>
                   <span className="mt-1 text-[11px] text-slate-500">
-                    {topic.lessons.length} submateri · ~{topic.estimatedMinutes} menit
+                    {topic.lessons.length} lessons · ~{topic.estimatedMinutes} min
                   </span>
                 </button>
               );
@@ -199,7 +199,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                         : 'bg-[#F7F5FC] text-[#39286F] hover:bg-[#EAE3F9]'
                     }`}
                   >
-                    Bagian {idx + 1}
+                    Part {idx + 1}
                   </button>
                 ))}
               </div>
@@ -208,7 +208,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                 {isLessonDone && (
                   <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#1E8E82]">
                     <CheckCircle2 className="h-4 w-4" />
-                    Sudah Dipahami
+                    Completed
                   </span>
                 )}
                 <button
@@ -217,7 +217,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                   className="inline-flex items-center gap-1 rounded-lg border border-[#E5E0F3] px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-[#F7F5FC]"
                 >
                   <FastForward className="h-3.5 w-3.5" />
-                  Lewati / Lanjut
+                  Skip / Next
                 </button>
               </div>
             </div>
@@ -225,7 +225,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
             {/* Objective & Explanation */}
             <div>
               <p className="text-xs font-semibold text-[#27A89A]">
-                Tujuan: {activeLesson.objective}
+                Objective: {activeLesson.objective}
               </p>
               <h2 className="mt-1 text-xl font-extrabold text-[#39286F]">
                 {activeLesson.title}
@@ -283,7 +283,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                     onClick={onGoToWorkshop}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-[#27A89A] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#1E8E82]"
                   >
-                    Coba di Algebra Workshop
+                    Try in Algebra Workshop
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -292,13 +292,13 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
 
             {/* Summary */}
             <div className="rounded-xl bg-[#EAF7F5] px-4 py-3 text-xs font-medium text-[#14554E]">
-              <strong>Rangkuman:</strong> {activeLesson.summary}
+              <strong>Summary:</strong> {activeLesson.summary}
             </div>
 
             {/* Quick Check Understanding */}
             <div className="rounded-2xl border border-[#E5E0F3] bg-[#FCFBFF] p-5">
               <h3 className="text-sm font-bold text-[#39286F]">
-                Cek Pemahaman Singkat
+                Quick Concept Check
               </h3>
               <p className="mt-1.5 text-sm text-slate-800">
                 {activeLesson.checkQuestion.prompt}
@@ -342,7 +342,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                   onClick={handleCheckAnswer}
                   className="rounded-xl bg-[#5943A8] px-4 py-2 text-xs font-bold text-white hover:bg-[#39286F] disabled:opacity-45"
                 >
-                  Periksa Jawaban
+                  Check Answer
                 </button>
                 {submittedCheck && (
                   <button
@@ -354,7 +354,7 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                     className="inline-flex items-center gap-1 rounded-xl border border-[#E5E0F3] bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
-                    Ulangi Pertanyaan
+                    Retry Question
                   </button>
                 )}
               </div>
@@ -369,8 +369,8 @@ export const LearningAcademy: React.FC<LearningAcademyProps> = ({
                   }`}
                 >
                   {selectedOption === activeLesson.checkQuestion.correctIndex
-                    ? 'Tepat sekali! (+30 XP) '
-                    : 'Belum tepat, mari lihat penjelasannya: '}
+                    ? 'Great job! (+30 XP) '
+                    : 'Not quite—here is the explanation: '}
                   {activeLesson.checkQuestion.explanation}
                 </div>
               )}
